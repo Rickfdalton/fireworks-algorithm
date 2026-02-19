@@ -10,7 +10,7 @@ x1,x2 in range -10 to 10
 */
 
 const int NO_FIREWORKS = 5;
-const int NO_ITERATIONS = 10;
+const int NO_ITERATIONS = 20;
 const float m = 50;
 const float A_hat= 5.0;
 const int S_min = 5;
@@ -18,8 +18,15 @@ const int S_max = 20;
 const double XI = 1e-12;   // ξ
 const double ZETA = 1e-12; // ζ
 
+//function to minimize
 double sphere(const glm::vec2& x){
     return (x.x)* (x.x)+ (x.y)*(x.y);
+}
+//get random gaussian number 
+double rand_gaussian() {
+    double u1 = drand48();
+    double u2 = drand48();
+    return sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
 }
 
 class Firework{
@@ -35,6 +42,18 @@ public:
 
 };
 
+//find best firework
+int best_firework(Firework* fireworks){
+    int best = 0;
+    for (int i =0; i<NO_FIREWORKS; i++){
+        if (fireworks[i].fx < fireworks[best].fx){
+            best=i;
+        }
+    }
+    return best;
+}
+
+//we calculate the amplitude and the no of sparks per firework
 void compute_explotion_params(Firework* fireworks){
 
     //find the max and min
@@ -70,6 +89,39 @@ void compute_explotion_params(Firework* fireworks){
 
 }
 
+//generate gasussian sparks
+glm::vec2* generate_gaussian_sparks(Firework* fireworks, int& total_sparks){
+    total_sparks=0;
+    for (int i=0; i< NO_FIREWORKS;i++){
+        total_sparks += fireworks[i].no_sparks;
+    }
+
+    // to store all (x1,x2) values of sparks ? we will select best from it later
+    glm::vec2* sparks = new glm::vec2[total_sparks];
+    int idx=0;
+    Firework best_fw = fireworks[best_firework(fireworks)];
+
+    //generate sparks
+    for (int i=0; i< NO_FIREWORKS;i++){
+        glm::vec2 x_i = fireworks[i].x;
+        for (int s=0; s< fireworks[i].no_sparks; s++){
+            //generate spark
+            //xspark​=xi​+ϵ⋅(xi​−xbest​),ϵ∼N(0,1)
+            double epsilon = rand_gaussian();
+            sparks[idx].x = x_i.x +  epsilon*(x_i.x - best_fw.x.x);
+            sparks[idx].y = x_i.y +  epsilon*(x_i.y - best_fw.x.y);
+
+            sparks[idx].x = std::clamp(sparks[idx].x ,-10.0f,10.0f);
+            sparks[idx].y = std::clamp(sparks[idx].y ,-10.0f,10.0f);
+            idx++;
+
+        }
+    }
+    return sparks;
+}  
+
+
+
 int main(){
 
     glm::vec2 firework_positions[NO_FIREWORKS];
@@ -83,7 +135,44 @@ int main(){
         fireworks[i] = Firework(firework_positions[i], y_values[i]);
     }
     
-    compute_explotion_params(fireworks);
+
+    int total_sparks;
+    //evaluate sparks
+    for(int iter=0; iter< NO_ITERATIONS; iter++){
+        cout << "Iteration " << iter << endl;
+        compute_explotion_params(fireworks);
+        total_sparks =0;
+        glm::vec2* sparks = generate_gaussian_sparks(fireworks, total_sparks);
+
+        //pick next iteration candiates
+        Firework* all_candidates= new Firework[total_sparks + NO_FIREWORKS];
+        for (int j=0; j<NO_FIREWORKS; j++){
+            all_candidates[j] = fireworks[j];
+        }
+        for (int j=0; j<total_sparks; j++){
+            all_candidates[NO_FIREWORKS+j] = Firework(sparks[j],sphere(sparks[j]));
+        }
+
+        int best_idx= 0;
+        for (int i = 0; i < NO_FIREWORKS; i++) {
+            for (int k=0 ; k < total_sparks + NO_FIREWORKS ; k++){
+                if (all_candidates[k].fx < all_candidates[best_idx].fx ){
+                    best_idx = k;
+                }
+            }
+            fireworks[i] = all_candidates[best_idx];
+            all_candidates[best_idx].fx = 1e12;
+
+        }
+
+        cout << "Best firework: " << fireworks[0].x.x << ", " << fireworks[0].x.y  << " f=" << fireworks[0].fx << "\n\n";
+
+        delete[] sparks;
+        delete[] all_candidates;
+
+    }
+
+    
 
     return 0;
 }
